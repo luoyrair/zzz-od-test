@@ -59,6 +59,27 @@ class TestScreenMatchFailureLog:
         assert '菜单-更多功能' in message
         assert '颜色过滤' not in message
 
+    def test_match_failure_without_id_mark_logs_generic(
+        self,
+        test_context: TestContext,
+        monkeypatch,
+    ):
+        """候选画面没有 id_mark（如快捷手册主画面）导致匹配失败时，也输出通用识别失败日志，不静默。"""
+        captured: list[tuple] = []
+        monkeypatch.setattr(log, 'warning', lambda *args, **kwargs: captured.append(args))
+
+        screen = test_context.get_test_image('menu.webp')
+        result = screen_utils.get_match_screen_name(
+            test_context,
+            screen,
+            screen_name_list=['快捷手册'],
+        )
+
+        assert result is None
+        assert captured, '识别失败时即使无接近匹配画面也应输出通用日志'
+        message = captured[0][0] % captured[0][1:]
+        assert '未能识别当前画面' in message
+
     def test_match_success_no_failure_log(
         self,
         test_context: TestContext,
