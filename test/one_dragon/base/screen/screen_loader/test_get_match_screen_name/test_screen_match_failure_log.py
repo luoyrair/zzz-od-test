@@ -1,0 +1,79 @@
+from test.conftest import TestContext
+
+from one_dragon.base.screen import screen_utils
+from one_dragon.utils.log_utils import log
+
+
+class TestScreenMatchFailureLog:
+
+    def test_match_failure_logs_color_filter_detail(
+        self,
+        test_context: TestContext,
+        monkeypatch,
+    ):
+        """画面识别失败时，日志应明确列出未命中的标识特征，带颜色过滤的要标注出来。
+
+        快捷手册-训练 靠识别高亮 TAB 的橙黄色「训练」文字（TAB-训练 带 color_range）作为画面标识，
+        用菜单截图去匹配它时必然失败；失败日志应出现 `快捷手册-训练` 和 `颜色过滤`，
+        便于用户一眼看出是快捷手册颜色过滤识别失败（本 issue 的核心诉求）。
+        """
+        captured: list[tuple] = []
+        monkeypatch.setattr(log, 'warning', lambda *args, **kwargs: captured.append(args))
+
+        screen = test_context.get_test_image('menu.webp')
+        result = screen_utils.get_match_screen_name(
+            test_context,
+            screen,
+            screen_name_list=['快捷手册-训练'],
+        )
+
+        assert result is None
+        assert captured, '识别失败时应输出一条诊断 warning 日志'
+        message = captured[0][0] % captured[0][1:]
+        assert '快捷手册-训练' in message
+        assert '颜色过滤' in message
+
+    def test_match_failure_detail_has_no_color_filter(
+        self,
+        test_context: TestContext,
+        monkeypatch,
+    ):
+        """不带 color_range 的画面标识失败时，日志只列画面与区域，不误标颜色过滤。
+
+        用菜单截图匹配「菜单-更多功能」（该画面的标识区域无 color_range），
+        失败日志应包含 `菜单-更多功能` 但不含 `颜色过滤`。
+        """
+        captured: list[tuple] = []
+        monkeypatch.setattr(log, 'warning', lambda *args, **kwargs: captured.append(args))
+
+        screen = test_context.get_test_image('menu.webp')
+        result = screen_utils.get_match_screen_name(
+            test_context,
+            screen,
+            screen_name_list=['菜单-更多功能'],
+        )
+
+        assert result is None
+        assert captured, '识别失败时应输出一条诊断 warning 日志'
+        message = captured[0][0] % captured[0][1:]
+        assert '菜单-更多功能' in message
+        assert '颜色过滤' not in message
+
+    def test_match_success_no_failure_log(
+        self,
+        test_context: TestContext,
+        monkeypatch,
+    ):
+        """识别成功时不应输出识别失败的诊断日志（不打扰正常流程）。"""
+        captured: list[tuple] = []
+        monkeypatch.setattr(log, 'warning', lambda *args, **kwargs: captured.append(args))
+
+        screen = test_context.get_test_image('compendium_train.webp')
+        result = screen_utils.get_match_screen_name(
+            test_context,
+            screen,
+            screen_name_list=['快捷手册-训练'],
+        )
+
+        assert result == '快捷手册-训练'
+        assert not captured
