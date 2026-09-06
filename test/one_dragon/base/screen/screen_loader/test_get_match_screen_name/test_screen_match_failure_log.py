@@ -1,3 +1,4 @@
+import pytest
 from test.conftest import TestContext
 
 from one_dragon.base.screen import screen_utils
@@ -5,6 +6,13 @@ from one_dragon.utils.log_utils import log
 
 
 class TestScreenMatchFailureLog:
+
+    @pytest.fixture(autouse=True)
+    def _reset_failure_throttle(self, test_context: TestContext):
+        """重置失败日志节流状态，避免测试间相互干扰（screen_loader 是 session 级共享的）。"""
+        test_context.screen_loader.last_screen_match_failure_detail = None
+        yield
+        test_context.screen_loader.last_screen_match_failure_detail = None
 
     def test_match_failure_logs_color_filter_detail(
         self,
@@ -98,3 +106,27 @@ class TestScreenMatchFailureLog:
 
         assert result == '快捷手册-训练'
         assert not captured
+
+    def test_match_failure_log_throttled(
+        self,
+        test_context: TestContext,
+        monkeypatch,
+    ):
+        """同一失败详情只打一次日志（节流）；识别成功后重置，下次失败再打。"""
+        captured: list[tuple] = []
+        monkeypatch.setattr(log, 'warning', lambda *args, **kwargs: captured.append(args))
+
+        fail_screen = test_context.get_test_image('menu.webp')
+        success_screen = test_context.get_test_image('compendium_train.webp')
+
+        # 第 1 次失败 → 输出诊断日志
+        screen_utils.get_match_screen_name(test_context, fail_screen, screen_name_list=['快捷手册-训练'])
+        assert len(captured) == 1, '首次识别失败应输出诊断日志'
+        # 第 2 次同详情失败 → 节流不重复输出
+        screen_utils.get_match_screen_name(test_context, fail_screen, screen_name_list=['快捷手册-训练'])
+        assert len(captured) == 1, '同一失败详情不应重复输出日志'
+        # 识别成功 → 重置节流
+        screen_utils.get_match_screen_name(test_context, success_screen, screen_name_list=['快捷手册-训练'])
+        # 再次失败 → 重新输出诊断日志
+        screen_utils.get_match_screen_name(test_context, fail_screen, screen_name_list=['快捷手册-训练'])
+        assert len(captured) == 2, '识别成功重置节流后，再次失败应重新输出日志'
